@@ -91,7 +91,8 @@ function render() {
 function renderLesson() {
   $("#lessonName").textContent = units[unitIndex]?.title ?? "选择课程";
   $("#cueList").innerHTML = cues.length ? cues.map((c,i)=>`<div class="cue-row ${i===activeCue?"active":""}"><button class="cue" data-cue="${i}"><span class="cue-time">${Math.floor(c.time/60)}:${String(Math.floor(c.time%60)).padStart(2,"0")}</span><span>${esc(c.text)}</span></button><button class="master-btn ${masteredForLesson().includes(i)?"done":""}" data-master="${i}" aria-label="标记掌握">${masteredForLesson().includes(i)?"已掌握":"掌握"}</button></div>`).join("") : '<div class="empty">字幕尚未载入。你仍可播放音频，或导入自己的 LRC 文件。</div>';
-  $("#audioSource").textContent = filename() ? "音频资源已就绪" : "等待选择课文";\n  renderMastery();
+  $("#audioSource").textContent = filename() ? "音频资源已就绪" : "等待选择课文";
+  renderMastery();
   $("#repeatBtn").classList.toggle("selected",state.repeat);
   $("#translationBtn").classList.toggle("selected",state.translated);
   $("#hideBtn").classList.toggle("selected",state.hideText);
@@ -136,7 +137,8 @@ function bind() {
       if(![1,2,3,4].includes(Number(data.book))) throw new Error("备份文件中的册数无效");
       book=Number(data.book); mode=["listen","speak","read","write"].includes(String(data.mode))?String(data.mode):"listen";
       state.speed=[0.75,0.85,1,1.15,1.25].includes(Number(data.speed))?Number(data.speed):1;
-      state.repeat=Boolean(data.repeat); state.hideText=Boolean(data.hideText);\n      if(data.mastered && typeof data.mastered==="object") localStorage.setItem(MASTERED_KEY,JSON.stringify(data.mastered));
+      state.repeat=Boolean(data.repeat); state.hideText=Boolean(data.hideText);
+      if(data.mastered && typeof data.mastered==="object") localStorage.setItem(MASTERED_KEY,JSON.stringify(data.mastered));
       ($("#speed") as HTMLSelectElement).value=String(state.speed);
       await loadBook(book,Number(data.unitIndex)||0);
       renderMode(); saveProgress(); notify("备份已恢复，已载入对应课程和训练设置。");
