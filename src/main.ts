@@ -24,7 +24,7 @@ function renderMastery() {
   const el = $("#masterySummary");
   if(el) el.innerHTML = total ? `<div class="mastery-line"><span>本课掌握进度</span><strong>${done}/${total} 句 · ${Math.round(done/total*100)}%</strong></div><div class="mastery-track"><i style="width:${done/total*100}%"></i></div>` : "字幕载入后即可记录逐句掌握情况";
 }
-type Progress = { version: number; book: number; unitIndex: number; mode: string; speed: number; repeat: boolean; hideText: boolean; updatedAt: string };
+type Progress = { version: number; book: number; unitIndex: number; mode: string; speed: number; repeat: boolean; hideText: boolean; mastered?: MasteredMap; updatedAt: string };
 function readProgress(): Partial<Progress> {
   try { return JSON.parse(localStorage.getItem(PROGRESS_KEY) || "{}") as Partial<Progress>; }
   catch { return {}; }
