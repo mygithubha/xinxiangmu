@@ -5,7 +5,17 @@ const SOURCES = ["https://nce.mleo.site", "https://85.mleo.site"];
 const BOOKS = [1,2,3,4];
 const $ = (s: string) => document.querySelector(s) as HTMLElement;
 let book = 1, units: Unit[] = [], unitIndex = 0, cues: Cue[] = [], activeCue = -1, selectedCue = 0, sentenceLoopEnd: number | null = null;
-let mode = "listen", mediaRecorder: MediaRecorder | null = null, recording: Blob[] = [], recordingUrl = "", sourceRoot = SOURCES[0];
+let mode = "listen", mediaRecorder: MediaRecorder | null = null, recording: Blob[] = [], recordingUrl = "", sourceRoot = SOURCES[0], recordingCue = -1, recordingStream: MediaStream | null = null;
+const voiceTakes = new Map<string, string>();
+function voiceKey(index = selectedCue) { return lessonKey() + ":" + index; }
+function refreshVoiceTake() {
+  const player = $("#myRecording") as HTMLAudioElement;
+  const url = voiceTakes.get(voiceKey());
+  if(player) { player.pause(); player.removeAttribute("src"); if(url) player.src = url; player.load(); }
+  const status = $("#voiceTakeStatus"); if(status) status.textContent = url ? "这句话已有录音，可以回听。" : "这句话还没有录音。";
+  const replay = $("#replayRecording") as HTMLButtonElement | null; if(replay) replay.disabled = !url;
+}
+function stopSentenceRecording() { if(mediaRecorder?.state === "recording") mediaRecorder.stop(); }
 const state = { translated: false, hideText: false, speed: 1, repeat: false };
 const PROGRESS_KEY = "english-lab-progress-v1";
 const MASTERED_KEY = "english-lab-mastered-v1";
@@ -93,6 +103,7 @@ function renderFocusCue() {
   if(prev) prev.disabled = selectedCue <= 0;
   if(next) next.disabled = selectedCue >= cues.length - 1;
   if(replay) replay.disabled = !cues.length;
+  refreshVoiceTake();
 }
 function playSentence(index = selectedCue) {
   if(!cues.length || !cues[index]) { notify("当前课文没有可用字幕，无法逐句播放。"); return; }
@@ -155,7 +166,27 @@ function bind() {
     if(!b)return; const i=Number(b.dataset.cue); selectedCue=i; sentenceLoopEnd=null; a.currentTime=cues[i].time; activeCue=i; void a.play(); syncCue(); renderFocusCue();
   });
   $("#checkWrite").addEventListener("click",()=>{const i=selectedCue;const expected=cues[i]?.text||"";const got=($("#writeAnswer") as HTMLTextAreaElement).value.trim();$("#writeFeedback").textContent=expected?(got.toLowerCase()===expected.toLowerCase()?"正确！拼写和内容匹配。":"请对照原句检查拼写与标点："+expected):"当前字幕不可用，暂时无法自动核对。";});
-  $("#record").addEventListener("click",async()=>{if(mediaRecorder?.state==="recording"){mediaRecorder.stop();$("#record").textContent="开始录音";return;}try{const stream=await navigator.mediaDevices.getUserMedia({audio:true});mediaRecorder=new MediaRecorder(stream);recording=[];mediaRecorder.ondataavailable=e=>recording.push(e.data);mediaRecorder.onstop=()=>{if(recordingUrl)URL.revokeObjectURL(recordingUrl);recordingUrl=URL.createObjectURL(new Blob(recording,{type:mediaRecorder?.mimeType||"audio/webm"}));($("#myRecording") as HTMLAudioElement).src=recordingUrl;stream.getTracks().forEach(t=>t.stop());notify("录音完成，可以回听。");};mediaRecorder.start();$("#record").textContent="停止录音";}catch{notify("无法访问麦克风，请允许录音权限，并使用 HTTPS。");}});
+  $("#record").addEventListener("click",async()=>{
+    if(mediaRecorder?.state==="recording"){stopSentenceRecording();return;}
+    if(!cues[selectedCue]){notify("请先选择一条字幕句子。");return;}
+    try{
+      recordingStream=await navigator.mediaDevices.getUserMedia({audio:true});
+      recordingCue=selectedCue; mediaRecorder=new MediaRecorder(recordingStream); recording=[];
+      mediaRecorder.ondataavailable=e=>{if(e.data.size)recording.push(e.data);};
+      mediaRecorder.onstop=()=>{
+        const key=lessonKey()+":"+recordingCue, old=voiceTakes.get(key);
+        if(old)URL.revokeObjectURL(old);
+        recordingUrl=URL.createObjectURL(new Blob(recording,{type:mediaRecorder?.mimeType||"audio/webm"}));
+        voiceTakes.set(key,recordingUrl);
+        recordingStream?.getTracks().forEach(t=>t.stop()); recordingStream=null;
+        ($("#record") as HTMLButtonElement).textContent="重新录这一句";
+        refreshVoiceTake(); notify("本句录音完成。可以回听；切换句子后会显示对应录音。");
+      };
+      mediaRecorder.start(); ($("#record") as HTMLButtonElement).textContent="停止录音";
+      $("#voiceTakeStatus").textContent="正在录制第 "+(recordingCue+1)+" 句…";
+    }catch{notify("无法访问麦克风，请允许录音权限，并使用 HTTPS。");}
+  });
+  $("#replayRecording").addEventListener("click",()=>{const url=voiceTakes.get(voiceKey());if(!url){notify("当前句子还没有录音。");return;}const p=$("#myRecording") as HTMLAudioElement;p.src=url;void p.play();});
   $("#export").addEventListener("click",()=>{saveProgress();download("english-lab-progress.json",JSON.stringify({version:1,book,unitIndex,mode,speed:state.speed,repeat:state.repeat,hideText:state.hideText,mastered:getMasteredMap(),exportedAt:new Date().toISOString()},null,2));});
   $("#importBackup").addEventListener("change",async e=>{
     const file=(e.target as HTMLInputElement).files?.[0]; if(!file)return;
@@ -179,7 +210,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 <main><section class="welcome"><div><span class="eyebrow">LISTEN · SPEAK · READ · WRITE</span><h1>把英语，练成自己的能力。</h1><p>以真实课文为材料，完成从听懂到表达的训练。</p></div><div class="orb">Aa</div></section>
 <section class="course panel"><div class="section-head"><div><span class="eyebrow">YOUR COURSE</span><h2>课程资源</h2></div><span class="live-dot">资源直连</span></div><div class="selectors"><label>教材册<select id="bookSelect"><option>加载中</option></select></label><label>当前课文<select id="lessonSelect"><option>加载中</option></select></label></div><div class="lesson-row"><div><small>NOW STUDYING</small><h3 id="lessonName">正在读取课程…</h3><p id="audioSource">等待资源连接</p></div><div class="arrows"><button id="prev">←</button><button id="next">→</button></div></div><audio id="audioPlayer" preload="none"></audio><div class="player"><button id="play" class="play">▶</button><div class="player-meta"><strong>课文原声</strong><small>来自现有 NCE 资源库</small></div><label class="speed">语速<select id="speed"><option value="0.75">0.75×</option><option value="0.85">0.85×</option><option value="1" selected>1.0×</option><option value="1.15">1.15×</option><option value="1.25">1.25×</option></select></label></div><div class="player-tools"><button id="repeatBtn">↻ 单曲循环</button><button id="hideBtn">◉ 隐藏文字</button><button id="translationBtn">文 翻译辅助</button><label class="import">导入 LRC<input id="importLrc" type="file" accept=".lrc,.txt"></label></div></section>
 <section class="practice"><div class="section-head"><div><span class="eyebrow">TRAINING MODES</span><h2>选择训练方式</h2></div></div><div class="mode-grid"><button class="mode selected" data-mode="listen"><span>耳</span><b>听力训练</b><small>盲听 · 逐句精听</small></button><button class="mode" data-mode="speak"><span>声</span><b>口语跟读</b><small>模仿 · 录音回听</small></button><button class="mode" data-mode="read"><span>读</span><b>阅读理解</b><small>逐句 · 理解</small></button><button class="mode" data-mode="write"><span>写</span><b>听写训练</b><small>拼写 · 即时核对</small></button></div></section>
-<section class="panel training"><div class="section-head"><div><span class="eyebrow">PRACTICE ROOM</span><h2>逐句训练</h2></div><span class="pill">听 → 说 → 读 → 写</span></div><p id="modeHint" class="hint">先不看文字，完整听一遍；第二遍再逐句核对。</p><div id="masterySummary" class="mastery-summary"></div><div class="focus-practice"><div class="focus-caption"><small>当前练习句</small><strong id="focusCueText">正在载入字幕…</strong></div><div class="focus-actions"><button id="prevCue" type="button">上一句</button><button id="replayCue" type="button" class="focus-primary">↻ 重播本句</button><button id="nextCue" type="button">下一句</button></div></div><div id="cueList" class="cue-list"><div class="empty">正在载入字幕…</div></div><div id="recordPanel" hidden class="tool-panel"><p>选中一句，播放并模仿，然后录下自己的声音。</p><button id="record" class="primary">开始录音</button><audio id="myRecording" controls></audio></div><div id="writePanel" hidden class="tool-panel"><p>先播放当前句子，再凭记忆写出英文。</p><textarea id="writeAnswer" placeholder="Write what you hear…"></textarea><button id="checkWrite" class="primary">核对听写</button><p id="writeFeedback" class="feedback"></p></div></section>
+<section class="panel training"><div class="section-head"><div><span class="eyebrow">PRACTICE ROOM</span><h2>逐句训练</h2></div><span class="pill">听 → 说 → 读 → 写</span></div><p id="modeHint" class="hint">先不看文字，完整听一遍；第二遍再逐句核对。</p><div id="masterySummary" class="mastery-summary"></div><div class="focus-practice"><div class="focus-caption"><small>当前练习句</small><strong id="focusCueText">正在载入字幕…</strong></div><div class="focus-actions"><button id="prevCue" type="button">上一句</button><button id="replayCue" type="button" class="focus-primary">↻ 重播本句</button><button id="nextCue" type="button">下一句</button></div></div><div id="cueList" class="cue-list"><div class="empty">正在载入字幕…</div></div><div id="recordPanel" hidden class="tool-panel"><p>先选中一句，听原声并模仿；录音只对应当前句子。切换句子可分别保存本次打开页面期间的录音。</p><div class="voice-actions"><button id="record" class="primary">录制当前句</button><button id="replayRecording" class="voice-secondary" disabled>回听我的录音</button></div><p id="voiceTakeStatus" class="feedback">这句话还没有录音。</p><audio id="myRecording" controls></audio></div><div id="writePanel" hidden class="tool-panel"><p>先播放当前句子，再凭记忆写出英文。</p><textarea id="writeAnswer" placeholder="Write what you hear…"></textarea><button id="checkWrite" class="primary">核对听写</button><p id="writeFeedback" class="feedback"></p></div></section>
 <div id="status" class="status">正在初始化…</div><footer>个人学习工具 · 课程音频与字幕由外部资源服务器提供</footer></main>`;
 const saved = readProgress();
 if([1,2,3,4].includes(Number(saved.book))) book=Number(saved.book);
