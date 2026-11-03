@@ -68,7 +68,7 @@ async function loadBook(n: number, targetIndex = 0) {
   status.textContent = "资源连接失败：" + String(last) + "。可能是跨域限制或资源服务器暂不可用。";
 }
 async function loadLesson() {
-  cues = []; activeCue = -1; selectedCue = 0; sentenceLoopEnd = null;
+  cues = []; activeCue = -1; selectedCue = 0; sentenceLoopEnd = null; selectedCue = 0; sentenceLoopEnd = null;
   try { cues = parseLrc(await fetchText(lrcUrl())); }
   catch { $("#status").textContent = "字幕暂时无法读取（可能是 CORS 限制）；音频仍可尝试播放。"; }
   const a = $("#audioPlayer") as HTMLAudioElement; a.pause(); a.src = audioUrl(); a.load();
